@@ -45,6 +45,9 @@ export default function Home() {
         alphaL: '',
         alphaM: '',
         alphaN: '',
+        dateEmployee: '',
+        datePrincipal: '',
+        dateManager: '',
     });
 
     const [timesheetData, setTimesheetData] = useState<Record<string, any>>({});
@@ -57,39 +60,45 @@ export default function Home() {
     const sigPadRef = useRef<SignaturePadRef>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const calculateTotalHours = (in1: string, out1: string, in2: string, out2: string) => {
-        const getMinutes = (time: string) => {
-            if (!time) return 0;
-            const [h, m] = time.split(':').map(Number);
-            return h * 60 + m;
-        };
+    const calculateDuration = (inTime: string, outTime: string) => {
+        if (!inTime || !outTime) return 0;
+        const [h1, m1] = inTime.split(':').map(Number);
+        const [h2, m2] = outTime.split(':').map(Number);
+        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+        return diff > 0 ? diff : 0;
+    };
 
-        let totalMinutes = 0;
-        if (in1 && out1) {
-            const diff = getMinutes(out1) - getMinutes(in1);
-            if (diff > 0) totalMinutes += diff;
-        }
-        if (in2 && out2) {
-            const diff = getMinutes(out2) - getMinutes(in2);
-            if (diff > 0) totalMinutes += diff;
-        }
-
-        return totalMinutes > 0 ? (totalMinutes / 60).toFixed(2) : '';
+    const formatDuration = (minutes: number) => {
+        return minutes > 0 ? (minutes / 60).toFixed(2) : '';
     };
 
     const handleInputChange = (day: number, field: string, value: string) => {
         setTimesheetData(prev => {
             const newData = { ...prev, [`${day}-${field}`]: value };
 
-            // Auto-calculate total if time fields change
-            if (['in1', 'out1', 'in2', 'out2'].includes(field)) {
-                const in1 = field === 'in1' ? value : (newData[`${day}-in1`] || '');
-                const out1 = field === 'out1' ? value : (newData[`${day}-out1`] || '');
-                const in2 = field === 'in2' ? value : (newData[`${day}-in2`] || '');
-                const out2 = field === 'out2' ? value : (newData[`${day}-out2`] || '');
+            // Auto-calculate totals
+            // We have 3 sets: 1, 2, 3
+            // If any time field changes, recalculate the specific set total AND the daily total
+            if (field.startsWith('in') || field.startsWith('out')) {
+                const setNum = field.replace(/^(in|out)/, ''); // '1', '2', '3'
 
-                const total = calculateTotalHours(in1, out1, in2, out2);
-                if (total) newData[`${day}-total`] = total;
+                const inTime = field.startsWith('in') ? value : (newData[`${day}-in${setNum}`] || '');
+                const outTime = field.startsWith('out') ? value : (newData[`${day}-out${setNum}`] || '');
+
+                const duration = calculateDuration(inTime, outTime);
+                newData[`${day}-total${setNum}`] = formatDuration(duration);
+
+                // Recalculate Daily Total
+                // We need to sum up total1, total2, total3 (in minutes to be accurate, then format)
+                // But here we only have the formatted strings in state usually. 
+                // Let's re-calculate all durations from inputs to be safe.
+                let totalDailyMinutes = 0;
+                for (let i = 1; i <= 3; i++) {
+                    const iIn = newData[`${day}-in${i}`] || '';
+                    const iOut = newData[`${day}-out${i}`] || '';
+                    totalDailyMinutes += calculateDuration(iIn, iOut);
+                }
+                newData[`${day}-dailyTotal`] = formatDuration(totalDailyMinutes);
             }
 
             return newData;
@@ -164,13 +173,28 @@ export default function Home() {
 
     const renderRow = (day: number) => (
         <tr key={day} className="border-b border-gray-300 h-8">
-            <td className="border-r border-gray-300 text-center bg-gray-50 text-sm font-medium text-black">{day}</td>
-            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-in1`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-sm px-1 text-black transition-colors" onChange={(e) => handleInputChange(day, 'in1', e.target.value)} /></td>
-            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-out1`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-sm px-1 text-black transition-colors" onChange={(e) => handleInputChange(day, 'out1', e.target.value)} /></td>
-            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-in2`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-sm px-1 text-black transition-colors" onChange={(e) => handleInputChange(day, 'in2', e.target.value)} /></td>
-            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-out2`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-sm px-1 text-black transition-colors" onChange={(e) => handleInputChange(day, 'out2', e.target.value)} /></td>
-            <td className="border-r border-gray-300 p-0"><input type="number" readOnly value={timesheetData[`${day}-total`] || ''} className="w-full h-full border-none focus:ring-0 text-sm px-1 text-black bg-gray-100 font-medium" tabIndex={-1} /></td>
-            <td className="p-0"><input type="text" value={timesheetData[`${day}-code`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-sm px-1 uppercase text-black transition-colors" maxLength={2} onChange={(e) => handleInputChange(day, 'code', e.target.value)} /></td>
+            <td className="border-r border-gray-300 text-center bg-gray-50 text-xs font-medium text-black w-8">{day}</td>
+
+            {/* Set 1 */}
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-in1`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'in1', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-out1`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'out1', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" readOnly value={timesheetData[`${day}-total1`] || ''} className="w-full h-full border-none focus:ring-0 text-xs px-0.5 text-black bg-gray-50 font-medium text-center" tabIndex={-1} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" value={timesheetData[`${day}-code1`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 uppercase text-black transition-colors text-center" maxLength={2} onChange={(e) => handleInputChange(day, 'code1', e.target.value)} /></td>
+
+            {/* Set 2 */}
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-in2`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'in2', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-out2`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'out2', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" readOnly value={timesheetData[`${day}-total2`] || ''} className="w-full h-full border-none focus:ring-0 text-xs px-0.5 text-black bg-gray-50 font-medium text-center" tabIndex={-1} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" value={timesheetData[`${day}-code2`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 uppercase text-black transition-colors text-center" maxLength={2} onChange={(e) => handleInputChange(day, 'code2', e.target.value)} /></td>
+
+            {/* Set 3 */}
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-in3`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'in3', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="time" value={timesheetData[`${day}-out3`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 text-black transition-colors text-center" onChange={(e) => handleInputChange(day, 'out3', e.target.value)} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" readOnly value={timesheetData[`${day}-total3`] || ''} className="w-full h-full border-none focus:ring-0 text-xs px-0.5 text-black bg-gray-50 font-medium text-center" tabIndex={-1} /></td>
+            <td className="border-r border-gray-300 p-0"><input type="text" value={timesheetData[`${day}-code3`] || ''} className="w-full h-full border-none focus:ring-0 focus:bg-yellow-100 text-xs px-0.5 uppercase text-black transition-colors text-center" maxLength={2} onChange={(e) => handleInputChange(day, 'code3', e.target.value)} /></td>
+
+            {/* Daily Total */}
+            <td className="p-0"><input type="text" readOnly value={timesheetData[`${day}-dailyTotal`] || ''} className="w-full h-full border-none focus:ring-0 text-xs px-0.5 text-black bg-gray-100 font-bold text-center" tabIndex={-1} /></td>
         </tr>
     );
 
@@ -274,14 +298,25 @@ export default function Home() {
                             <div className="bg-yellow-100 text-center font-bold py-1 border-b-2 border-black text-black">MONTH 1 (16-31)</div>
                             <table className="w-full border-collapse">
                                 <thead>
-                                    <tr className="bg-gray-100 border-b border-black text-xs text-black">
-                                        <th className="border-r border-gray-300 w-10">Day</th>
-                                        <th className="border-r border-gray-300">In</th>
-                                        <th className="border-r border-gray-300">Out</th>
+                                    <tr className="bg-gray-100 border-b border-black text-[10px] text-black">
+                                        <th className="border-r border-gray-300 w-8">Day</th>
+
                                         <th className="border-r border-gray-300">In</th>
                                         <th className="border-r border-gray-300">Out</th>
                                         <th className="border-r border-gray-300">Total</th>
-                                        <th>Code</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th className="border-r border-gray-300">In</th>
+                                        <th className="border-r border-gray-300">Out</th>
+                                        <th className="border-r border-gray-300">Total</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th className="border-r border-gray-300">In</th>
+                                        <th className="border-r border-gray-300">Out</th>
+                                        <th className="border-r border-gray-300">Total</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th>Total Hours</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -295,14 +330,25 @@ export default function Home() {
                             <div className="bg-yellow-100 text-center font-bold py-1 border-b-2 border-black text-black">MONTH 2 (1-15)</div>
                             <table className="w-full border-collapse">
                                 <thead>
-                                    <tr className="bg-gray-100 border-b border-black text-xs text-black">
-                                        <th className="border-r border-gray-300 w-10">Day</th>
-                                        <th className="border-r border-gray-300">In</th>
-                                        <th className="border-r border-gray-300">Out</th>
+                                    <tr className="bg-gray-100 border-b border-black text-[10px] text-black">
+                                        <th className="border-r border-gray-300 w-8">Day</th>
+
                                         <th className="border-r border-gray-300">In</th>
                                         <th className="border-r border-gray-300">Out</th>
                                         <th className="border-r border-gray-300">Total</th>
-                                        <th>Code</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th className="border-r border-gray-300">In</th>
+                                        <th className="border-r border-gray-300">Out</th>
+                                        <th className="border-r border-gray-300">Total</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th className="border-r border-gray-300">In</th>
+                                        <th className="border-r border-gray-300">Out</th>
+                                        <th className="border-r border-gray-300">Total</th>
+                                        <th className="border-r border-gray-300">Code</th>
+
+                                        <th>Total Hours</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -393,7 +439,13 @@ export default function Home() {
                         {/* Signatures */}
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-bold uppercase mb-1 text-black">Employee Signature</label>
+                                <div className="flex justify-between items-end mb-1">
+                                    <label className="block text-xs font-bold uppercase text-black">Employee Signature</label>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold">DATE</span>
+                                        <input type="date" name="dateEmployee" value={formData.dateEmployee} onChange={handleFormChange} className="border-b border-black outline-none text-xs w-32 bg-transparent" />
+                                    </div>
+                                </div>
                                 <SignaturePad ref={sigPadRef} onEnd={() => setIsSigned(true)} />
                                 <button type="button" onClick={() => {
                                     if (confirm('Are you sure you want to clear the signature?')) {
@@ -403,11 +455,19 @@ export default function Home() {
                                 }} className="text-xs text-red-500 mt-1 hover:underline">Clear Signature</button>
                             </div>
                             {/* Placeholders for other signatures (not interactive for this user) */}
-                            <div className="border-b border-black pt-8">
+                            <div className="border-b border-black pt-8 flex justify-between items-end">
                                 <span className="text-xs font-bold uppercase text-gray-500">Principal / Supervisor (Office Use)</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-bold text-gray-500">DATE</span>
+                                    <input type="date" name="datePrincipal" value={formData.datePrincipal} onChange={handleFormChange} className="border-b border-black outline-none text-xs w-32 bg-transparent" />
+                                </div>
                             </div>
-                            <div className="border-b border-black pt-8">
+                            <div className="border-b border-black pt-8 flex justify-between items-end">
                                 <span className="text-xs font-bold uppercase text-gray-500">Program Manager (Office Use)</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-bold text-gray-500">DATE</span>
+                                    <input type="date" name="dateManager" value={formData.dateManager} onChange={handleFormChange} className="border-b border-black outline-none text-xs w-32 bg-transparent" />
+                                </div>
                             </div>
                         </div>
                     </div>

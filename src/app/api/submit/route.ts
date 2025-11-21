@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
             school, employeeName, employeeId, fte, hoursPerWeek,
             month1, month2, year, position, employeeType, email,
             timesheetData, accountCodes, signatureData,
-            alphaL, alphaM, alphaN
+            alphaL, alphaM, alphaN,
+            dateEmployee, datePrincipal, dateManager
         } = body;
 
         // 1. Generate PDF
@@ -101,7 +102,13 @@ export async function POST(req: NextRequest) {
         };
 
         // Column widths for Timesheet - Widened to fill page (Total ~512)
-        const colWidths = [40, 80, 80, 80, 80, 80, 72]; // Day, In, Out, In, Out, Total, Code
+        // Day: 30
+        // Set: 38, 38, 38, 28 = 142 * 3 = 426
+        // Total: 50
+        // Sum: 30 + 426 + 50 = 506
+        const colWidths = [30, 38, 38, 38, 28, 38, 38, 38, 28, 38, 38, 38, 28, 50];
+        // Headers: Day, In1, Out1, Tot1, Cod1, In2, Out2, Tot2, Cod2, In3, Out3, Tot3, Cod3, DailyTot
+
         const totalGridWidth = colWidths.reduce((a, b) => a + b, 0);
         const startX = 50;
         const rowHeight = 20;
@@ -109,7 +116,7 @@ export async function POST(req: NextRequest) {
         // Draw Header Row
         const drawTimesheetHeader = (yPos: number) => {
             let currentX = startX;
-            const headers = ['Day', 'In', 'Out', 'In', 'Out', 'Total', 'Code'];
+            const headers = ['Day', 'In', 'Out', 'Tot', 'Cd', 'In', 'Out', 'Tot', 'Cd', 'In', 'Out', 'Tot', 'Cd', 'Total'];
             headers.forEach((h, i) => {
                 drawCell(h, currentX, yPos, colWidths[i], rowHeight, 8, boldFont, 'center');
                 currentX += colWidths[i];
@@ -126,23 +133,22 @@ export async function POST(req: NextRequest) {
         daysMonth1.forEach(day => {
             if (y < 50) { currentPage = pdfDoc.addPage(); y = height - 50; drawTimesheetHeader(y); y -= rowHeight; }
             let currentX = startX;
-            const data = timesheetData[`${day}-in1`] || timesheetData[`${day}-out1`] || timesheetData[`${day}-in2`] || timesheetData[`${day}-out2`] || timesheetData[`${day}-total`] || timesheetData[`${day}-code`] ? {
-                in1: timesheetData[`${day}-in1`] || '',
-                out1: timesheetData[`${day}-out1`] || '',
-                in2: timesheetData[`${day}-in2`] || '',
-                out2: timesheetData[`${day}-out2`] || '',
-                total: timesheetData[`${day}-total`] || '',
-                code: timesheetData[`${day}-code`] || ''
-            } : { in1: '', out1: '', in2: '', out2: '', total: '', code: '' };
 
-            drawCell(day.toString(), currentX, y, colWidths[0], rowHeight, 10, font, 'center');
-            currentX += colWidths[0];
-            drawCell(data.in1, currentX, y, colWidths[1], rowHeight); currentX += colWidths[1];
-            drawCell(data.out1, currentX, y, colWidths[2], rowHeight); currentX += colWidths[2];
-            drawCell(data.in2, currentX, y, colWidths[3], rowHeight); currentX += colWidths[3];
-            drawCell(data.out2, currentX, y, colWidths[4], rowHeight); currentX += colWidths[4];
-            drawCell(data.total, currentX, y, colWidths[5], rowHeight); currentX += colWidths[5];
-            drawCell(data.code, currentX, y, colWidths[6], rowHeight);
+            // Extract data for 3 sets
+            const d = (field: string) => timesheetData[`${day}-${field}`] || '';
+
+            const rowData = [
+                day.toString(),
+                d('in1'), d('out1'), d('total1'), d('code1'),
+                d('in2'), d('out2'), d('total2'), d('code2'),
+                d('in3'), d('out3'), d('total3'), d('code3'),
+                d('dailyTotal')
+            ];
+
+            rowData.forEach((val, i) => {
+                drawCell(val, currentX, y, colWidths[i], rowHeight, 8, font, i === 0 ? 'center' : 'left');
+                currentX += colWidths[i];
+            });
             y -= rowHeight;
         });
 
@@ -158,23 +164,22 @@ export async function POST(req: NextRequest) {
         daysMonth2.forEach(day => {
             if (y < 50) { currentPage = pdfDoc.addPage(); y = height - 50; drawTimesheetHeader(y); y -= rowHeight; }
             let currentX = startX;
-            const data = timesheetData[`${day}-in1`] || timesheetData[`${day}-out1`] || timesheetData[`${day}-in2`] || timesheetData[`${day}-out2`] || timesheetData[`${day}-total`] || timesheetData[`${day}-code`] ? {
-                in1: timesheetData[`${day}-in1`] || '',
-                out1: timesheetData[`${day}-out1`] || '',
-                in2: timesheetData[`${day}-in2`] || '',
-                out2: timesheetData[`${day}-out2`] || '',
-                total: timesheetData[`${day}-total`] || '',
-                code: timesheetData[`${day}-code`] || ''
-            } : { in1: '', out1: '', in2: '', out2: '', total: '', code: '' };
 
-            drawCell(day.toString(), currentX, y, colWidths[0], rowHeight, 10, font, 'center');
-            currentX += colWidths[0];
-            drawCell(data.in1, currentX, y, colWidths[1], rowHeight); currentX += colWidths[1];
-            drawCell(data.out1, currentX, y, colWidths[2], rowHeight); currentX += colWidths[2];
-            drawCell(data.in2, currentX, y, colWidths[3], rowHeight); currentX += colWidths[3];
-            drawCell(data.out2, currentX, y, colWidths[4], rowHeight); currentX += colWidths[4];
-            drawCell(data.total, currentX, y, colWidths[5], rowHeight); currentX += colWidths[5];
-            drawCell(data.code, currentX, y, colWidths[6], rowHeight);
+            // Extract data for 3 sets
+            const d = (field: string) => timesheetData[`${day}-${field}`] || '';
+
+            const rowData = [
+                day.toString(),
+                d('in1'), d('out1'), d('total1'), d('code1'),
+                d('in2'), d('out2'), d('total2'), d('code2'),
+                d('in3'), d('out3'), d('total3'), d('code3'),
+                d('dailyTotal')
+            ];
+
+            rowData.forEach((val, i) => {
+                drawCell(val, currentX, y, colWidths[i], rowHeight, 8, font, i === 0 ? 'center' : 'left');
+                currentX += colWidths[i];
+            });
             y -= rowHeight;
         });
 
@@ -257,6 +262,40 @@ export async function POST(req: NextRequest) {
                 height: sigDims.height,
             });
             currentPage.drawText('Employee Signature', { x: 50, y: y - sigDims.height - 15, size: 10, font });
+
+            // Draw Date
+            if (dateEmployee) {
+                currentPage.drawText(`Date: ${dateEmployee}`, { x: 300, y: y - sigDims.height - 15, size: 10, font });
+            }
+        } else {
+            // Even if no signature, show the line and date
+            currentPage.drawLine({ start: { x: 50, y: y - 40 }, end: { x: 250, y: y - 40 }, thickness: 1, color: rgb(0, 0, 0) });
+            currentPage.drawText('Employee Signature', { x: 50, y: y - 55, size: 10, font });
+            if (dateEmployee) {
+                currentPage.drawText(`Date: ${dateEmployee}`, { x: 300, y: y - 55, size: 10, font });
+            }
+        }
+
+        // Principal / Supervisor
+        y -= 120; // Increased spacing from 80 to 120
+        if (y < 50) { currentPage = pdfDoc.addPage(); y = height - 50; }
+        currentPage.drawLine({ start: { x: 50, y: y }, end: { x: 250, y: y }, thickness: 1, color: rgb(0, 0, 0) });
+        currentPage.drawText('Principal / Supervisor', { x: 50, y: y - 15, size: 10, font });
+        currentPage.drawText('Date:', { x: 270, y: y, size: 10, font });
+        currentPage.drawLine({ start: { x: 300, y: y }, end: { x: 400, y: y }, thickness: 1, color: rgb(0, 0, 0) });
+        if (datePrincipal) {
+            currentPage.drawText(datePrincipal, { x: 305, y: y + 2, size: 10, font });
+        }
+
+        // Program Manager
+        y -= 100; // Increased spacing from 80 to 100
+        if (y < 50) { currentPage = pdfDoc.addPage(); y = height - 50; }
+        currentPage.drawLine({ start: { x: 50, y: y }, end: { x: 250, y: y }, thickness: 1, color: rgb(0, 0, 0) });
+        currentPage.drawText('Program Manager', { x: 50, y: y - 15, size: 10, font });
+        currentPage.drawText('Date:', { x: 270, y: y, size: 10, font });
+        currentPage.drawLine({ start: { x: 300, y: y }, end: { x: 400, y: y }, thickness: 1, color: rgb(0, 0, 0) });
+        if (dateManager) {
+            currentPage.drawText(dateManager, { x: 305, y: y + 2, size: 10, font });
         }
 
         // Disclaimer

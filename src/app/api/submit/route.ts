@@ -325,9 +325,53 @@ export async function POST(req: NextRequest) {
         drawSigLine('EMPLOYEE SIGNATURE', dateEmployee, sigLine1Y);
         // Signature Image
         if (signatureData) {
-            const sigImg = await pdfDoc.embedPng(signatureData);
-            const sDims = sigImg.scale(0.25); // Smaller
-            page.drawImage(sigImg, { x: sigX + 5, y: sigLine1Y, width: sDims.width, height: sDims.height });
+            try {
+                let imageBytes: Buffer | undefined;
+                let isPng = true;
+
+                if (typeof signatureData === 'string' && signatureData.includes('base64,')) {
+                    const matches = signatureData.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/);
+                    if (matches) {
+                        const type = matches[1];
+                        const data = matches[2];
+                        imageBytes = Buffer.from(data, 'base64');
+                        isPng = type === 'png';
+                    } else {
+                        // Fallback: try stripping metadata blindly
+                        const split = signatureData.split('base64,');
+                        if (split.length > 1) {
+                            imageBytes = Buffer.from(split[1], 'base64');
+                            // Guess type based on first few bytes or just try PNG
+                            isPng = signatureData.includes('image/png');
+                        }
+                    }
+                } else {
+                    // Assume raw base64 string
+                    imageBytes = Buffer.from(signatureData, 'base64');
+                }
+
+                if (imageBytes) {
+                    const sigImg = isPng ? await pdfDoc.embedPng(imageBytes) : await pdfDoc.embedJpg(imageBytes);
+                    // Scale logic - Resize safely
+                    // Scale down to fit height of ~40, preserving aspect ratio
+                    const maxHeight = 40;
+                    const scale = maxHeight / sigImg.height;
+                    const sDims = sigImg.scale(scale); // Scale to fit height
+
+                    page.drawImage(sigImg, {
+                        x: sigX + 5,
+                        y: sigLine1Y - sDims.height + 10, // Adjust Y to sit on line
+                        width: sDims.width,
+                        height: sDims.height
+                    });
+                }
+            } catch (sigErr) {
+                console.error('Error embedding signature:', sigErr);
+                // Continue without signature if it fails, or allow it to throw? 
+                // Better to throw so user knows, but maybe log is enough?
+                // Throwing effectively alerts the frontend.
+                throw new Error('Failed to process signature image. Please ensure it is a valid PNG or JPG.');
+            }
         }
 
         const sigLine2Y = sigLine1Y - 30;

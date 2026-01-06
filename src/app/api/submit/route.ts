@@ -145,6 +145,19 @@ export async function POST(req: NextRequest) {
             });
         };
 
+        const formatTo12Hour = (time24: string) => {
+            if (!time24) return '';
+            const [h, m] = time24.split(':').map(Number);
+            if (isNaN(h) || isNaN(m)) return time24;
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const h12 = h % 12 || 12;
+            return `${h12}:${m.toString().padStart(2, '0')}${ampm}`;
+        };
+
+        const parseDuration = (dur: string) => parseFloat(dur) || 0;
+
+        let totalHoursCalculated = 0;
+
         // Month 1
         page.drawRectangle({ x: MARGIN_LEFT, y: y, width: PAGE_WIDTH, height: 12, color: rgb(1, 1, 0.9) });
         drawText('MONTH 1 (16-31)', MARGIN_LEFT + 5, y + 2, 8, boldFont);
@@ -156,11 +169,14 @@ export async function POST(req: NextRequest) {
         for (const day of daysMonth1) {
             let curX = MARGIN_LEFT;
             const d = (k: string) => timesheetData[`${day}-${k}`] || '';
+            const dailyTotal = parseFloat(d('dailyTotal')) || 0;
+            totalHoursCalculated += dailyTotal;
+
             const vals = [
                 day.toString(),
-                d('in1'), d('out1'), d('total1'), d('code1'),
-                d('in2'), d('out2'), d('total2'), d('code2'),
-                d('in3'), d('out3'), d('total3'), d('code3'),
+                formatTo12Hour(d('in1')), formatTo12Hour(d('out1')), d('total1'), d('code1'),
+                formatTo12Hour(d('in2')), formatTo12Hour(d('out2')), d('total2'), d('code2'),
+                formatTo12Hour(d('in3')), formatTo12Hour(d('out3')), d('total3'), d('code3'),
                 d('dailyTotal')
             ];
             vals.forEach((v, i) => {
@@ -183,11 +199,14 @@ export async function POST(req: NextRequest) {
         for (const day of daysMonth2) {
             let curX = MARGIN_LEFT;
             const d = (k: string) => timesheetData[`${day}-${k}`] || '';
+            const dailyTotal = parseFloat(d('dailyTotal')) || 0;
+            totalHoursCalculated += dailyTotal;
+
             const vals = [
                 day.toString(),
-                d('in1'), d('out1'), d('total1'), d('code1'),
-                d('in2'), d('out2'), d('total2'), d('code2'),
-                d('in3'), d('out3'), d('total3'), d('code3'),
+                formatTo12Hour(d('in1')), formatTo12Hour(d('out1')), d('total1'), d('code1'),
+                formatTo12Hour(d('in2')), formatTo12Hour(d('out2')), d('total2'), d('code2'),
+                formatTo12Hour(d('in3')), formatTo12Hour(d('out3')), d('total3'), d('code3'),
                 d('dailyTotal')
             ];
             vals.forEach((v, i) => {
@@ -216,12 +235,23 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < 3; i++) {
             curX = MARGIN_LEFT;
             const ac = accountCodes[i] || {};
-            const vals = [ac.fund, ac.location, ac.program, ac.goal, ac.function, ac.object, ac.resource, ac.year, ac.manager, ac.alpha, ac.hours, ac.payRate, ac.totalPay];
+            // Auto-fill hours for first row if empty
+            let hoursVal = ac.hours;
+            if (i === 0 && !hoursVal && totalHoursCalculated > 0) {
+                hoursVal = totalHoursCalculated.toFixed(2);
+            }
+            // Recalculate total pay for that row if we auto-filled hours and payRate is present
+            let totalPayVal = ac.totalPay;
+            if (i === 0 && !ac.hours && ac.payRate && hoursVal) {
+                totalPayVal = (parseFloat(hoursVal) * parseFloat(ac.payRate)).toFixed(2);
+            }
+
+            const vals = [ac.fund, ac.location, ac.program, ac.goal, ac.function, ac.object, ac.resource, ac.year, ac.manager, ac.alpha, hoursVal, ac.payRate, totalPayVal];
             vals.forEach(v => {
                 drawCell(v || '', curX, y, wPerCol, GRID_ROW_HEIGHT, 7, font, 'center');
                 curX += wPerCol;
             });
-            if (ac.totalPay) grandTotal += parseFloat(ac.totalPay) || 0;
+            if (totalPayVal) grandTotal += parseFloat(totalPayVal) || 0;
             y -= GRID_ROW_HEIGHT;
         }
 
@@ -307,10 +337,16 @@ export async function POST(req: NextRequest) {
         drawSigLine('PROGRAM MANAGER', dateManager, sigLine3Y);
 
         // --- Disclaimer ---
-        const disclaimer = "As per CA Labor Code Section 512, an employee with a work period of more than five hours per day must take a meal period of not less than 30 minutes; an employee with a work period of more than ten hours per day must take a second meal period of not less than 30 minutes.";
+        const disclaimerPart1 = "As per CA Labor Code Section 512, an employee with a work period of more than five hours per day must take a meal";
+        const disclaimerPart2 = "period of not less than 30 minutes; an employee with a work period of more than ten hours per day must take a second";
+        const disclaimerPart3 = "meal period of not less than 30 minutes.";
 
-        // Ensure it's sufficiently below signatures but within page
-        drawText(disclaimer, MARGIN_LEFT, 15, 6, font, 'center', PAGE_WIDTH);
+        // Red Color
+        const redColor = rgb(1, 0, 0);
+
+        page.drawText(disclaimerPart1, { x: MARGIN_LEFT + (PAGE_WIDTH - font.widthOfTextAtSize(disclaimerPart1, 6)) / 2, y: 25, size: 6, font: font, color: redColor });
+        page.drawText(disclaimerPart2, { x: MARGIN_LEFT + (PAGE_WIDTH - font.widthOfTextAtSize(disclaimerPart2, 6)) / 2, y: 18, size: 6, font: font, color: redColor });
+        page.drawText(disclaimerPart3, { x: MARGIN_LEFT + (PAGE_WIDTH - font.widthOfTextAtSize(disclaimerPart3, 6)) / 2, y: 11, size: 6, font: font, color: redColor });
 
         const pdfBytes = await pdfDoc.save();
 

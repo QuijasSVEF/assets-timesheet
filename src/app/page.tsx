@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 
 const SCHOOLS = [
@@ -110,8 +110,10 @@ export default function Home() {
             if (field === 'hours' || field === 'payRate') {
                 const hours = parseFloat(field === 'hours' ? value : currentRow.hours);
                 const rate = parseFloat(field === 'payRate' ? value : currentRow.payRate);
-                if (!isNaN(hours) && !isNaN(rate)) {
+                if (!isNaN(hours) && !isNaN(rate) && (field === 'payRate' ? value : currentRow.payRate)) {
                     currentRow.totalPay = (hours * rate).toFixed(2);
+                } else {
+                    currentRow.totalPay = '';
                 }
             }
 
@@ -120,18 +122,74 @@ export default function Home() {
         });
     };
 
+    const [signatureFile, setSignatureFile] = useState<string | null>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setSignatureFile(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const getTotalHours = () => {
+        let total = 0;
+        DAYS_MONTH_1.forEach(day => {
+            total += parseFloat(timesheetData[`${day}-dailyTotal`] || 0);
+        });
+        DAYS_MONTH_2.forEach(day => {
+            total += parseFloat(timesheetData[`${day}-dailyTotal`] || 0);
+        });
+        return total.toFixed(2);
+    };
+
+    // Auto-sync Total Hours to Account Codes[0]
+    useEffect(() => {
+        const total = getTotalHours();
+        if (parseFloat(total) > 0) {
+            setAccountCodes(prev => {
+                const newCodes = [...prev];
+                // Only update if standard hours have changed to avoid loops/overwrites if not needed, 
+                // but here we force sync as per prompt "Can it sum all hours above?"
+                const currentRow = { ...newCodes[0] };
+
+                // Update hours
+                currentRow.hours = total;
+
+                // Update Total Pay if Rate exists, otherwise clear it
+                if (currentRow.payRate) {
+                    currentRow.totalPay = (parseFloat(total) * parseFloat(currentRow.payRate)).toFixed(2);
+                } else {
+                    currentRow.totalPay = '';
+                }
+
+                newCodes[0] = currentRow;
+                return newCodes;
+            });
+        }
+    }, [timesheetData]);
+
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [isSigned, setIsSigned] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isSigned && sigPadRef.current?.isEmpty()) {
-            alert('Please sign the timesheet.');
+
+        // Validation: Must have either drawn signature OR uploaded file
+        if (!isSigned && sigPadRef.current?.isEmpty() && !signatureFile) {
+            alert('Please sign the timesheet or upload a signature.');
             return;
         }
 
         setIsSubmitting(true);
-        const signatureData = sigPadRef.current?.getTrimmedCanvas().toDataURL('image/png');
+        // Prioritize uploaded file if exists, otherwise use signature pad
+        let signatureData: string | null | undefined = signatureFile;
+        if (!signatureData && !sigPadRef.current?.isEmpty()) {
+            signatureData = sigPadRef.current?.getTrimmedCanvas().toDataURL('image/png');
+        }
 
         try {
             const response = await fetch('/api/submit', {
@@ -339,7 +397,10 @@ export default function Home() {
                     </div>
 
                     {/* Grand Total */}
-                    <div className="flex justify-end mb-4 text-xs font-bold">
+                    <div className="flex justify-between items-center mb-4 text-xs font-bold">
+                        <div className="text-gray-600">
+                            Calculated Total Hours: {getTotalHours()}
+                        </div>
                         <div className="flex border border-black items-center">
                             <div className="bg-gray-100 px-3 py-1 border-r border-black">Grand Total Pay:</div>
                             <div className="px-3 py-1 min-w-[80px] text-right">
@@ -376,9 +437,14 @@ export default function Home() {
                                     </div>
                                 </div>
                                 <div className="border-b border-black">
-                                    <SignaturePad ref={sigPadRef} onEnd={() => setIsSigned(true)} />
+                                    <div className="flex flex-col gap-2 mb-2">
+                                        <div className="text-[10px] text-gray-500">Sign below OR upload image</div>
+                                        <input type="file" accept="image/*" onChange={handleFileChange} className="text-xs" />
+                                    </div>
+                                    {!signatureFile && <SignaturePad ref={sigPadRef} onEnd={() => setIsSigned(true)} />}
+                                    {signatureFile && <img src={signatureFile} alt="Signature" className="h-16 object-contain border border-gray-300 bg-gray-50" />}
                                 </div>
-                                <button type="button" onClick={() => { if (confirm('Clear?')) { sigPadRef.current?.clear(); setIsSigned(false); } }} className="text-red-500 hover:underline">Clear</button>
+                                <button type="button" onClick={() => { if (confirm('Clear?')) { sigPadRef.current?.clear(); setIsSigned(false); setSignatureFile(null); } }} className="text-red-500 hover:underline">Clear</button>
                             </div>
 
                             <div className="flex justify-between items-end pt-2 border-t border-transparent">

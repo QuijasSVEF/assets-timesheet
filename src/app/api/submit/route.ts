@@ -354,13 +354,13 @@ export async function POST(req: NextRequest) {
                     const sigImg = isPng ? await pdfDoc.embedPng(imageBytes) : await pdfDoc.embedJpg(imageBytes);
                     // Scale logic - Resize safely
                     // Scale down to fit height of ~40, preserving aspect ratio
-                    const maxHeight = 40;
+                    const maxHeight = 25;
                     const scale = maxHeight / sigImg.height;
                     const sDims = sigImg.scale(scale); // Scale to fit height
 
                     page.drawImage(sigImg, {
                         x: sigX + 5,
-                        y: sigLine1Y - sDims.height + 10, // Adjust Y to sit on line
+                        y: sigLine1Y + 2, // Position slightly above the line
                         width: sDims.width,
                         height: sDims.height
                     });

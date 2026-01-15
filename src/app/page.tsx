@@ -146,7 +146,7 @@ export default function Home() {
         return total.toFixed(2);
     };
 
-    // Auto-sync Total Hours to Account Codes[0]
+    // Auto-sync Total Hours to Account Codes[0] AND Hours/Week
     useEffect(() => {
         const total = getTotalHours();
         if (parseFloat(total) > 0) {
@@ -169,6 +169,9 @@ export default function Home() {
                 newCodes[0] = currentRow;
                 return newCodes;
             });
+
+            // Auto-update Hours/Week top field
+            setFormData(prev => ({ ...prev, hoursPerWeek: total }));
         }
     }, [timesheetData]);
 
